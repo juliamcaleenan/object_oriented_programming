@@ -1,37 +1,21 @@
 class Move
   attr_reader :key
 
-  VALUES = { 'r' => 'rock', 'p' => 'paper', 'sc' => 'scissors',
-                  'l' => 'lizard', 'sp' => 'spock' }.freeze
+  VALUES = { 'r' => 'rock', 'p' => 'paper', 'sc' => 'scissors', 'l' => 'lizard',
+             'sp' => 'spock' }.freeze
   WINNING_COMBINATIONS = [%w(r sc), %w(p r), %w(sc p), %w(r l), %w(l sp),
-                        %w(sp sc), %w(sc l), %w(l p), %w(p sp), %w(sp r)].freeze
+                          %w(sp sc), %w(sc l), %w(l p), %w(p sp), %w(sp r)].freeze
 
   def initialize(key)
     @key = key
   end
 
   def >(other_move)
-    WINNING_COMBINATIONS.include?([self.key, other_move.key])
+    WINNING_COMBINATIONS.include?([key, other_move.key])
   end
 
   def to_s
     VALUES[key]
-  end
-end
-
-class History
-  attr_accessor :moves
-
-  def initialize
-    @moves = []
-  end
-
-  def to_s
-    @moves.join(', ')
-  end
-
-  def update_moves(move)
-    self.moves << move
   end
 end
 
@@ -41,7 +25,7 @@ class Player
   def initialize
     set_name
     @score = 0
-    @history = History.new
+    @history = []
   end
 
   def reset_score
@@ -75,28 +59,36 @@ class Human < Player
       puts "Please enter a valid choice."
     end
     self.move = Move.new(choice)
-    history.update_moves(move)
+    history << move
   end
 end
 
 class Computer < Player
   attr_accessor :weights
 
-  ROBOTS = {'Chappie' => { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 },
-            'Hal' => { 'r' => 0, 'p' => 1, 'sc' => 0, 'l' => 0, 'sp' => 0 },
-            'Sonny' => { 'r' => 0, 'p' => 0, 'sc' => 1, 'l' => 0, 'sp' => 0 } }
+  ROBOTS = { 'Chappie' => { 'r' => 0.2, 'p' => 0.2, 'sc' => 0.2, 'l' => 0.2, 'sp' => 0.2 },
+             'Hal' => { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 },
+             'Sonny' => { 'r' => 0, 'p' => 0.4, 'sc' => 0.3, 'l' => 0.2, 'sp' => 0.1 } }.freeze
+
+  def initialize
+    super
+    set_weights
+  end
 
   def set_name
-    puts "Choose an opponent:"
+    puts "Choose an opponent (enter the corresponding number):"
     ROBOTS.keys.each_with_index { |robot, index| puts "#{index + 1}. #{robot}" }
     choice = ''
     loop do
-      choice = gets.chomp.capitalize
-      break if ROBOTS.keys.include?(choice)
-      puts "Please enter a valid choice."
+      choice = gets.chomp.to_i
+      break if (1..ROBOTS.size).cover?(choice)
+      puts "Please enter a valid number between 1 and #{ROBOTS.size}."
     end
-    self.name = choice
-    self.weights = ROBOTS[choice]
+    self.name = ROBOTS.keys[choice - 1]
+  end
+
+  def set_weights
+    self.weights = ROBOTS[name]
   end
 
   def create_weighted_values
@@ -109,7 +101,7 @@ class Computer < Player
 
   def choose
     self.move = Move.new(create_weighted_values.sample)
-    history.update_moves(move)
+    history << move
   end
 end
 
@@ -118,20 +110,24 @@ module Display
     system('clear') || system('cls')
   end
 
-  def press_enter_to_continue
+  def line_break
     puts "-----------------------------------------------------"
+  end
+
+  def press_enter_to_continue
+    line_break
     puts "Press enter to continue..."
     gets
   end
 
-  def display_welcome_message(game, winning_score)
-    puts "Welcome to #{game}."
+  def display_welcome_message(winning_score)
+    puts "Welcome to #{self}."
     puts "The winner is the first to reach #{winning_score} points. Good luck!"
     press_enter_to_continue
   end
 
-  def display_goodbye_message(game)
-    puts "Thank you for playing #{game}. Good bye!"
+  def display_goodbye_message
+    puts "Thank you for playing #{self}. Good bye!"
   end
 end
 
@@ -154,7 +150,7 @@ class RPSLSGame
     clear_screen
     puts "Current scores: #{human.name}: #{human.score}; "\
          "#{computer.name}: #{computer.score}"
-    puts "-----------------------------------------------------"
+    line_break
   end
 
   def display_moves
@@ -177,9 +173,9 @@ class RPSLSGame
   end
 
   def display_history
-    puts "-----------------------------------------------------"
-    puts "#{human.name}'s moves: #{human.history}"
-    puts "#{computer.name}'s moves: #{computer.history}"
+    line_break
+    puts "#{human.name}'s moves: #{human.history.join(', ')}"
+    puts "#{computer.name}'s moves: #{computer.history.join(', ')}"
   end
 
   def overall_winner
@@ -189,9 +185,9 @@ class RPSLSGame
   end
 
   def display_overall_winner
-    puts "-----------------------------------------------------"
+    line_break
     puts "#{overall_winner.name} has #{WINNING_SCORE} points and has won!"
-    puts "-----------------------------------------------------"
+    line_break
   end
 
   def play_again?
@@ -202,7 +198,6 @@ class RPSLSGame
       break if %w(y n yes no).include?(answer)
       puts "Enter 'y' to play again or 'n' to quit."
     end
-
     return true if answer == 'y' || answer == 'yes'
     false
   end
@@ -218,28 +213,36 @@ class RPSLSGame
     @computer = Computer.new if answer == 'y' || answer == 'yes'
   end
 
+  def play_round
+    display_scores
+    human.choose
+    computer.choose
+    display_moves
+    display_round_winner
+    round_winner.increment_score if round_winner
+    display_history
+  end
+
+  def restart_game
+    human.reset_score
+    computer.reset_score
+    change_opponent
+  end
+
   def play
     clear_screen
-    display_welcome_message(self, WINNING_SCORE)
+    display_welcome_message(WINNING_SCORE)
     loop do
       loop do
-        display_scores
-        human.choose
-        computer.choose
-        display_moves
-        display_round_winner
-        round_winner.increment_score if round_winner
-        display_history
+        play_round
         break if overall_winner
         press_enter_to_continue
       end
       display_overall_winner
       break unless play_again?
-      human.reset_score
-      computer.reset_score
-      change_opponent
+      restart_game
     end
-    display_goodbye_message(self)
+    display_goodbye_message
   end
 end
 
