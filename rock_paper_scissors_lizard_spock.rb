@@ -65,30 +65,31 @@ end
 
 class Computer < Player
   attr_accessor :weights
-
-  ROBOTS = { 'Chappie' => { 'r' => 0.2, 'p' => 0.2, 'sc' => 0.2, 'l' => 0.2, 'sp' => 0.2 },
-             'Hal' => { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 },
-             'Sonny' => { 'r' => 0, 'p' => 0.4, 'sc' => 0.3, 'l' => 0.2, 'sp' => 0.1 } }.freeze
+  @@robots = []
 
   def initialize
     super
     set_weights
   end
 
+  def self.inherited(subclass)
+    @@robots << subclass
+  end
+
   def set_name
     puts "Choose an opponent (enter the corresponding number):"
-    ROBOTS.keys.each_with_index { |robot, index| puts "#{index + 1}. #{robot}" }
+    @@robots.each_with_index { |robot, index| puts "#{index + 1}. #{robot}" }
     choice = ''
     loop do
       choice = gets.chomp.to_i
-      break if (1..ROBOTS.size).cover?(choice)
-      puts "Please enter a valid number between 1 and #{ROBOTS.size}."
+      break if (1..@@robots.size).cover?(choice)
+      puts "Please enter a valid number between 1 and #{@@robots.size}."
     end
-    self.name = ROBOTS.keys[choice - 1]
+    self.name = @@robots[choice - 1]
   end
 
   def set_weights
-    self.weights = ROBOTS[name]
+    self.weights = name::WEIGHTS
   end
 
   def create_weighted_values
@@ -103,6 +104,18 @@ class Computer < Player
     self.move = Move.new(create_weighted_values.sample)
     history << move
   end
+end
+
+class Chappie < Computer
+  WEIGHTS = { 'r' => 0.2, 'p' => 0.2, 'sc' => 0.2, 'l' => 0.2, 'sp' => 0.2 }.freeze
+end
+
+class Hal < Computer
+  WEIGHTS = { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 }.freeze
+end
+
+class Sonny < Computer
+  WEIGHTS = { 'r' => 0, 'p' => 0.4, 'sc' => 0.3, 'l' => 0.2, 'sp' => 0.1 }.freeze
 end
 
 module Display
