@@ -4,7 +4,8 @@ class Move
   VALUES = { 'r' => 'rock', 'p' => 'paper', 'sc' => 'scissors', 'l' => 'lizard',
              'sp' => 'spock' }.freeze
   WINNING_COMBINATIONS = [%w(r sc), %w(p r), %w(sc p), %w(r l), %w(l sp),
-                          %w(sp sc), %w(sc l), %w(l p), %w(p sp), %w(sp r)].freeze
+                          %w(sp sc), %w(sc l), %w(l p), %w(p sp),
+                          %w(sp r)].freeze
 
   def initialize(key)
     @key = key
@@ -35,6 +36,34 @@ class Player
   def increment_score
     self.score += 1
   end
+
+  def moves_played
+    moves_played = {}
+    Move::VALUES.each { |key, _| moves_played[key] = 0 }
+    history.each { |move| moves_played[move.key] += 1 }
+    moves_played
+  end
+
+  def moves_won(winner_history)
+    moves_won = {}
+    Move::VALUES.each { |key, _| moves_won[key] = 0 }
+    history.zip(winner_history).each do |move|
+      moves_won[move[0].key] += 1 if move[1] == name
+    end
+    moves_won
+  end
+
+  def analyse_moves(winner_history)
+    moves_analysis = {}
+    moves_played.each do |key, value|
+      if value == 0
+        moves_analysis[key] = nil
+      else
+        moves_analysis[key] = moves_won(winner_history)[key].to_f / value
+      end
+    end
+    moves_analysis
+  end
 end
 
 class Human < Player
@@ -42,7 +71,7 @@ class Human < Player
     name = ''
     loop do
       puts "What is your name?"
-      name = gets.chomp
+      name = gets.chomp.strip
       break unless name.empty?
       puts "Please enter your name."
     end
@@ -64,58 +93,85 @@ class Human < Player
 end
 
 class Computer < Player
-  attr_accessor :weights
-  @@robots = []
+  attr_accessor :weights, :robot
+  attr_reader :dynamic_weights
+  class << self; attr_reader :robots; end
+  MIN_WEIGHT = 0.05
+  MAX_WEIGHT = 0.5
+  @robots = []
 
-  def initialize
-    super
-    set_weights
+  def robots
+    self.class.robots
   end
 
   def self.inherited(subclass)
-    @@robots << subclass
+    robots << subclass
   end
 
   def set_name
     puts "Choose an opponent (enter the corresponding number):"
-    @@robots.each_with_index { |robot, index| puts "#{index + 1}. #{robot}" }
+    robots.each_with_index { |robot, index| puts "#{index + 1}. #{robot}" }
     choice = ''
     loop do
       choice = gets.chomp.to_i
-      break if (1..@@robots.size).cover?(choice)
-      puts "Please enter a valid number between 1 and #{@@robots.size}."
+      break if (1..robots.size).cover?(choice)
+      puts "Please enter a valid number."
     end
-    self.name = @@robots[choice - 1]
+    self.robot = robots[choice - 1].new
+    self.name = robot.class
   end
 
-  def set_weights
-    self.weights = name::WEIGHTS
+  def calculate_dynamic_weights(winner_history)
+    analyse_moves(winner_history).each do |key, value|
+      if value
+        robot.weights[key] = [[value.round(2), MIN_WEIGHT].max, MAX_WEIGHT].min
+      else
+        robot.weights[key] = (1 / Move::VALUES.size.to_f).round(2)
+      end
+    end
   end
 
-  def create_weighted_values
+  def create_weighted_values(winner_history)
+    calculate_dynamic_weights(winner_history) if robot.dynamic_weights
     weighted_values = []
-    weights.each do |key, weight|
+    robot.weights.each do |key, weight|
       (weight * 100).to_i.times { weighted_values << key }
     end
     weighted_values
   end
 
-  def choose
-    self.move = Move.new(create_weighted_values.sample)
+  def choose(winner_history)
+    self.move = Move.new(create_weighted_values(winner_history).sample)
     history << move
   end
 end
 
 class Chappie < Computer
-  WEIGHTS = { 'r' => 0.2, 'p' => 0.2, 'sc' => 0.2, 'l' => 0.2, 'sp' => 0.2 }.freeze
+  def initialize
+    @weights = { 'r' => 0.2, 'p' => 0.2, 'sc' => 0.2, 'l' => 0.2, 'sp' => 0.2 }
+    @dynamic_weights = false
+  end
 end
 
 class Hal < Computer
-  WEIGHTS = { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 }.freeze
+  def initialize
+    @weights = { 'r' => 1, 'p' => 0, 'sc' => 0, 'l' => 0, 'sp' => 0 }
+    @dynamic_weights = false
+  end
 end
 
 class Sonny < Computer
-  WEIGHTS = { 'r' => 0, 'p' => 0.4, 'sc' => 0.3, 'l' => 0.2, 'sp' => 0.1 }.freeze
+  def initialize
+    @weights = { 'r' => 0, 'p' => 0.4, 'sc' => 0.3, 'l' => 0.2, 'sp' => 0.1 }
+    @dynamic_weights = false
+  end
+end
+
+class R2D2 < Computer
+  def initialize
+    @weights = {}
+    @dynamic_weights = true
+  end
 end
 
 module Display
@@ -146,13 +202,14 @@ end
 
 class RPSLSGame
   include Display
-  attr_accessor :human, :computer
+  attr_accessor :human, :computer, :winner_history
 
   WINNING_SCORE = 5
 
   def initialize
     @human = Human.new
     @computer = Computer.new
+    @winner_history = []
   end
 
   def to_s
@@ -177,6 +234,14 @@ class RPSLSGame
     false
   end
 
+  def update_winner_history
+    winner_history << if round_winner
+                        round_winner.name
+                      else
+                        'tie'
+                      end
+  end
+
   def display_round_winner
     if round_winner
       puts "#{round_winner.name} won this round!"
@@ -189,6 +254,7 @@ class RPSLSGame
     line_break
     puts "#{human.name}'s moves: #{human.history.join(', ')}"
     puts "#{computer.name}'s moves: #{computer.history.join(', ')}"
+    puts "Round winners: #{winner_history.join(', ')}"
   end
 
   def overall_winner
@@ -211,8 +277,7 @@ class RPSLSGame
       break if %w(y n yes no).include?(answer)
       puts "Enter 'y' to play again or 'n' to quit."
     end
-    return true if answer == 'y' || answer == 'yes'
-    false
+    answer == 'y' || answer == 'yes'
   end
 
   def change_opponent
@@ -229,9 +294,10 @@ class RPSLSGame
   def play_round
     display_scores
     human.choose
-    computer.choose
+    computer.choose(winner_history)
     display_moves
     display_round_winner
+    update_winner_history
     round_winner.increment_score if round_winner
     display_history
   end
